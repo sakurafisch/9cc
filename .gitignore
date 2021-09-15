@@ -1,0 +1,5 @@
+*~
+*.o
+tmp*
+main
+.vscode
