@@ -21,6 +21,9 @@ struct Token {
 	char *str;
 };
 
+// Input program
+char *user_input;
+
 // 正在处理的标记
 Token *token;
 
@@ -29,6 +32,20 @@ Token *token;
 void error(char *fmt, ...) {
 	va_list ap;
 	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	fprintf(stderr, "\n");
+	exit(1);
+}
+
+// Reports an error location and exit.
+void error_at(char *loc, char *fmt, ...) {
+	va_list ap;
+	va_start(ap, fmt);
+
+	int pos = loc - user_input;
+	fprintf(stderr, "%s\n", user_input);
+	fprintf(stderr, "%*s", pos, "");
+	fprintf(stderr, "^ ");
 	vfprintf(stderr, fmt, ap);
 	fprintf(stderr, "\n");
 	exit(1);
@@ -47,7 +64,7 @@ bool consume(char op) {
 // 否则警告为错误
 void expect(char op) {
 	if (token->kind != TK_RESERVED || token->str[0] != op) {
-		error("不是 '%c'", op);
+		error_at(token->str, "expected '%c'", op);
 	}
 	token = token->next;
 }
@@ -56,7 +73,8 @@ void expect(char op) {
 // 否则警告为错误
 int expect_number() {
 	if (token->kind != TK_NUM) {
-		error("不是数值");
+		// error("不是数值");
+		error_at(token->str, "expected a number");
 	}
 	int val = token->val;
 	token = token->next;
@@ -76,8 +94,9 @@ Token *new_token(TokenKind kind, Token *cur, char *str) {
 	return tok;
 }
 
-// 将输入文字列 p 作标记解析并回传标记连接串列
-Token *tokensize(char *p) {
+// Tokenize `user_input` and returns new tokens
+Token *tokensize() {
+	char *p = user_input;
 	Token head;
 	head.next = NULL;
 	Token *cur = &head;
@@ -100,7 +119,7 @@ Token *tokensize(char *p) {
 			continue;
 		}
 
-		error("标记解析失败");
+		error_at(p, "expected a number");
 	}
 
 	new_token(TK_EOF, cur, p);
@@ -114,7 +133,8 @@ int main(int argc, char **argv) {
 	}
 
 	// 标记解析
-	token = tokensize(argv[1]);
+	user_input = argv[1];
+	token = tokensize();
 
 	printf(".intel_syntax noprefix\n");
 	printf(".global main\n");
