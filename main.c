@@ -21,6 +21,8 @@ struct Token {
 	char *str;
 };
 
+
+
 // Input program
 char *user_input;
 
@@ -108,7 +110,7 @@ Token *tokensize() {
 			continue;
 		}
 
-		if (*p == '+' || *p == '-') {
+		if (*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '(' || *p == ')') {
 			cur = new_token(TK_RESERVED, cur, p++);
 			continue;
 		}
@@ -126,6 +128,115 @@ Token *tokensize() {
 	return head.next;
 }
 
+
+typedef enum {
+	ND_ADD, // +
+	ND_SUB, // -
+	ND_MUL, // *
+	ND_DIV, // /
+	ND_NUM, // 整数
+} NodeKind;
+
+typedef struct Node Node;
+
+// 抽象语法树结点的结构
+struct Node {
+	NodeKind kind;  // 结点的类型
+	Node *lhs;      //左边 left-hand side
+	Node *rhs;      // 右边 right-hand side
+	int val;        // 结点的值，只在 kind 为 ND_NUM 时使用
+};
+
+Node *expr();
+Node *mul();
+Node *term();
+
+Node *new_node(NodeKind kind, Node *lhs, Node *rhs) {
+	Node *node = calloc(1, sizeof(Node));
+	node->kind = kind;
+	node->lhs  = lhs;
+	node->rhs  = rhs;
+	return node;
+}
+
+Node *new_node_num(int val) {
+	Node *node = calloc(1, sizeof(Node));
+	node->kind = ND_NUM;
+	node->val = val;
+	return node;
+}
+
+Node *expr() {
+	Node *node = mul();
+
+	while (true) {
+		if (consume('+')) {
+			node = new_node(ND_ADD, node, mul());
+		} else if (consume('-')) {
+			node = new_node(ND_SUB, node, mul());
+		} else {
+			return node;
+		}
+	}
+}
+
+Node *mul() {
+	Node *node = term();
+
+	while (true) {
+		if (consume('*')) {
+			node = new_node(ND_MUL, node, term());
+		} else if (consume('/')) {
+			node = new_node(ND_DIV, node, term());
+		} else {
+			return node;
+		}
+	}
+}
+
+Node *term() {
+	// 下一个标记如果是 "("，则应该是 "(" expr ")"
+	if (consume('(')) {
+		Node *node = expr();
+		expect(')');
+		return node;
+	}
+
+	// 否则返回数值
+	return new_node_num(expect_number());
+}
+
+void gen(Node *node) {
+	if (node->kind == ND_NUM) {
+		printf("  push %d\n", node->val);
+		return;
+	}
+	
+	gen(node->lhs);
+	gen(node->rhs);
+
+	printf("  pop rdi\n");
+	printf("  pop rax\n");
+
+	switch (node->kind) {
+		case ND_ADD:
+		    printf("  add rax, rdi\n");
+			break;
+		case ND_SUB:
+		    printf("  sub rax, rdi\n");
+			break;
+		case ND_MUL:
+		    printf("  imul rax, rdi\n");
+			break;
+		case ND_DIV:
+		    printf("  cqo\n");
+			printf("  idiv rdi\n");
+			break;
+	}
+
+	printf("  push rax\n");
+}
+
 int main(int argc, char **argv) {
 	if (argc != 2) {
 		fprintf(stderr, "引数数量错误\n");
@@ -135,27 +246,15 @@ int main(int argc, char **argv) {
 	// 标记解析
 	user_input = argv[1];
 	token = tokensize();
+	Node *node = expr();
 
 	printf(".intel_syntax noprefix\n");
 	printf(".global main\n");
 	printf("main:\n");
 
-	// 确认算式必须以数开头
-	// 输出最初的 mov 指令
-	printf("  mov rax, %d\n", expect_number());
+	gen(node);
 
-	// 一边消耗 `+ <数>` 或 `- <数>` 的标记，
-	// 并输出组合语言指令
-	while (!at_eof()) {
-		if (consume('+')) {
-			printf("  add rax, %d\n", expect_number());
-			continue;
-		}
-
-		expect('-');
-		printf("  sub rax, %d\n", expect_number());
-	}
-
+	printf("  pop rax\n");
 	printf("  ret\n");
 	return 0;
 }
